@@ -4,39 +4,40 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Linux
-            os: ubuntu-latest
-            configure: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-            build: QPITCH_CONTAINER_ENGINE=docker tools/linux/build.sh "$PWD/build"
-          - name: macOS
-            os: macos-latest
-            configure: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
-            build: cmake --build build --target QPitch_VST3 QPitch_CLAP qpitch_shifter_test qpitch_detector_test --parallel 2
-          - name: Windows
-            os: windows-latest
-            configure: cmake -S . -B build
-            build: cmake --build build --config Release --target QPitch_VST3 QPitch_CLAP qpitch_shifter_test qpitch_detector_test --parallel 2
+    name: Windows (VST3 + Standalone)
+    runs-on: windows-2022
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Configure
-        if: runner.os != 'Linux'
-        run: ${{ matrix.configure }}
+        run: cmake -S . -B build -A x64
 
       - name: Build
-        run: ${{ matrix.build }}
+        run: cmake --build build --config Release -j
 
-      - name: Test pitch shifting
-        if: runner.os != 'Linux'
-        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Package Windows zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts
+          $vst3 = "build\HumHouseVocalTune_artefacts\Release\VST3\SkellyTune.vst3"
+          $standalone = "build\HumHouseVocalTune_artefacts\Release\Standalone\SkellyTune.exe"
+          Compress-Archive -Path $vst3,$standalone -DestinationPath "artifacts\SkellyTune-Windows-x64.zip"
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SkellyTune-Windows-x64
+          path: artifacts/*
+
+      # ---------- Release assets ----------
+      - name: Attach release assets
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
