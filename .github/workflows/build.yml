@@ -1,8 +1,7 @@
 name: build
 
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -24,16 +23,29 @@ jobs:
       - name: Package Windows zip
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path artifacts
-          $vst3 = "build\HumHouseVocalTune_artefacts\Release\VST3\SkellyTune.vst3"
-          $standalone = "build\HumHouseVocalTune_artefacts\Release\Standalone\SkellyTune.exe"
-          Compress-Archive -Path $vst3,$standalone -DestinationPath "artifacts\SkellyTune-Windows-x64.zip"
+          if ($env:GITHUB_REF_TYPE -eq "tag") {
+            $version = $env:GITHUB_REF_NAME
+          } else {
+            $version = "${{ inputs.version }}"
+          }
 
-      - name: Upload Windows artifacts
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+          New-Item -ItemType Directory -Force -Path package/licenses | Out-Null
+          Copy-Item LICENSE, THIRD_PARTY_NOTICES.md package/licenses/
+          Copy-Item third_party/rubberband/COPYING package/licenses/RubberBand-COPYING
+          Copy-Item third_party/rubberband/COMPILING.md package/licenses/RubberBand-COMPILING.md
+          Copy-Item -Recurse third_party/rubberband/src/ext package/licenses/RubberBand-ext
+          Copy-Item -Recurse -Force build/QPitch_artefacts/Release/VST3/QPitch.vst3 package/
+          Copy-Item -Recurse -Force build/QPitch_artefacts/Release/CLAP/QPitch.clap package/
+          Compress-Archive -Path package/QPitch.vst3, package/licenses -DestinationPath "dist/QPitch-$version-${{ matrix.platform }}-vst3.zip" -Force
+          Compress-Archive -Path package/QPitch.clap, package/licenses -DestinationPath "dist/QPitch-$version-${{ matrix.platform }}-clap.zip" -Force
+
+      - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: SkellyTune-Windows-x64
-          path: artifacts/*
+          name: qpitch-${{ matrix.platform }}
+          path: dist/*.zip
 
       # ---------- Release assets ----------
       - name: Attach release assets
